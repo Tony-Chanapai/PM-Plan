@@ -86,7 +86,6 @@ export default function ImportPage() {
   const fetchFromDrive = async () => {
     const fileId = parseDriveUrl(driveUrl)
     if (!fileId) { setError('Could not extract a file ID from the link. Make sure sharing is set to "Anyone with the link".'); return }
-
     setLoading(true)
     setError('')
     try {
@@ -124,10 +123,8 @@ export default function ImportPage() {
         </p>
       </div>
 
-      {/* Step 1: Source */}
       <section className={styles.section}>
         <div className={styles.stepLabel}><span className={styles.stepNum}>1</span> Choose data source</div>
-
         <div className={styles.card}>
           <div className={styles.cardHead}>
             <Link2 size={15} strokeWidth={1.8} />
@@ -174,11 +171,9 @@ export default function ImportPage() {
         )}
       </section>
 
-      {/* Step 2: Preview */}
       {data && (
         <section className={styles.section}>
           <div className={styles.stepLabel}><span className={styles.stepNum}>2</span> Review detected data</div>
-
           <div className={styles.metaRow}>
             <div className={styles.metaCard}>
               <span className={styles.metaNum}>{data.rows.length}</span>
@@ -197,13 +192,11 @@ export default function ImportPage() {
               <span>{data.fileName}</span>
             </div>
           </div>
-
           <div className={styles.colChips}>
             {data.cols.map(c => (
               <span key={c} className={styles.chip}>{c}</span>
             ))}
           </div>
-
           <div className={styles.card} style={{ padding: 0, overflow: 'hidden' }}>
             <div className={styles.tableHeader}>
               <Table2 size={14} strokeWidth={1.8} />
@@ -235,11 +228,9 @@ export default function ImportPage() {
         </section>
       )}
 
-      {/* Step 3: Build DB */}
       {data && (
         <section className={styles.section}>
           <div className={styles.stepLabel}><span className={styles.stepNum}>3</span> Configure database</div>
-
           <div className={styles.card}>
             <div className={styles.dbRow}>
               <div className={styles.fieldGroup}>
@@ -254,7 +245,6 @@ export default function ImportPage() {
                   onChange={e => setTableName(e.target.value)} placeholder="pm_tasks" />
               </div>
             </div>
-
             <div className={styles.dbActions}>
               <div className={styles.statusLine}>
                 {buildStatus === '' && (
