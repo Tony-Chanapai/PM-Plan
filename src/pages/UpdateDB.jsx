@@ -1,175 +1,200 @@
 import { useState, useRef, useCallback } from 'react'
-import { parseExcel, PM_ROUND_LABELS } from '../utils/excel.js'
-import { loadDB, saveDB } from '../utils/db.js'
+import { parseExcel } from '../utils/excel.js'
+import { upsertDevices, getDeviceCount } from '../utils/supabase.js'
+
+const COLS = ['No.','CS-Code','Model','Serial Number','Service Type','Start','End','Clinic','Province']
+
+function ResultCards({ result, onReset }) {
+  return (
+    <div className="card slide-up" style={{ padding: 28, textAlign: 'center' }}>
+      <div style={{ fontSize: 52, marginBottom: 14 }}>✅</div>
+      <h2 style={{ fontSize: 20, marginBottom: 20 }}>Database Updated!</h2>
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 14, marginBottom: 24, flexWrap: 'wrap' }}>
+        {[['Imported', result.imported, 'var(--green)'], ['Skipped', result.duplicates, 'var(--yellow)'], ['Total', result.total, 'var(--text)']].map(([l,v,c]) => (
+          <div key={l} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 20px', minWidth: 80 }}>
+            <div style={{ fontSize: 28, fontWeight: 700, color: c }}>{v}</div>
+            <div style={{ fontSize: 11, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{l}</div>
+          </div>
+        ))}
+      </div>
+      <button className="btn btn-primary btn-full" onClick={onReset}>Upload Another File</button>
+    </div>
+  )
+}
 
 export default function UpdateDB() {
   const [dragging, setDragging] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState(null)
   const [result, setResult] = useState(null)
   const fileRef = useRef()
 
   const processFile = useCallback((file) => {
-    if (!file || !file.name.match(/\.(xlsx|xls)$/i)) {
-      setError('Please upload an Excel file (.xlsx or .xls)')
-      return
-    }
+    if (!file || !file.name.match(/\.(xlsx|xls)$/i)) { setError('Please upload an Excel file (.xlsx or .xls)'); return }
     setLoading(true); setError(''); setResult(null); setPreview(null)
     const reader = new FileReader()
     reader.onload = (e) => {
-      try {
-        const rows = parseExcel(e.target.result)
-        setPreview({ fileName: file.name, rows })
-      } catch (err) {
-        setError('Could not read file: ' + err.message)
-      } finally { setLoading(false) }
+      try { setPreview({ fileName: file.name, rows: parseExcel(e.target.result) }) }
+      catch (err) { setError('Could not read file: ' + err.message) }
+      finally { setLoading(false) }
     }
     reader.readAsArrayBuffer(file)
   }, [])
 
-  const handleDrop = useCallback((e) => {
-    e.preventDefault(); setDragging(false)
-    processFile(e.dataTransfer.files[0])
-  }, [processFile])
-
-  const buildDB = () => {
+  const buildDB = async () => {
     if (!preview) return
-    const existing = loadDB()
-    const existingSerials = new Set(existing.map(r => r.serial_number))
-    const newRows = preview.rows.filter(r => r.serial_number && !existingSerials.has(r.serial_number))
-    const updated = [...existing, ...newRows]
-    saveDB(updated)
-    setResult({ imported: newRows.length, duplicates: preview.rows.length - newRows.length, total: updated.length })
+    setUploading(true)
+    setError('')
+    try {
+      const validRows = preview.rows.filter(r => r.serial_number)
+
+      // Upload in batches of 200 to avoid request size limits
+      const batchSize = 200
+      for (let i = 0; i < validRows.length; i += batchSize) {
+        const batch = validRows.slice(i, i + batchSize)
+        await upsertDevices(batch)
+      }
+
+      // Get updated count
+      const newCount = await getDeviceCount()
+      setResult({
+        imported: validRows.length,
+        duplicates: preview.rows.length - validRows.length,
+        total: newCount
+      })
+    } catch (err) {
+      setError('Upload failed: ' + err.message)
+    } finally {
+      setUploading(false)
+    }
   }
 
-  const S = styles
+  const DropZone = () => (
+    <div
+      style={{ border: `2px dashed ${dragging ? 'var(--accent)' : 'var(--border2)'}`, borderRadius: 16, padding: '52px 24px', textAlign: 'center', cursor: 'pointer', background: dragging ? 'var(--accent-dim)' : 'var(--bg1)', transition: 'all 0.2s', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}
+      onDragOver={e => { e.preventDefault(); setDragging(true) }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={e => { e.preventDefault(); setDragging(false); processFile(e.dataTransfer.files[0]) }}
+      onClick={() => fileRef.current?.click()}
+    >
+      <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={e => processFile(e.target.files[0])} />
+      {loading ? <div style={{ width: 40, height: 40, border: '3px solid var(--border2)', borderTopColor: 'var(--accent)', borderRadius: '50%' }} className="spin" /> : <div style={{ fontSize: 52 }}>📂</div>}
+      <p style={{ color: 'var(--text2)', fontSize: 15, fontWeight: 500 }}>{loading ? 'Reading file…' : 'Tap to select Excel file'}</p>
+      <p style={{ color: 'var(--text3)', fontSize: 12, fontFamily: 'var(--mono)' }}>.xlsx · .xls</p>
+    </div>
+  )
 
-  return (
-    <div style={S.page}>
-      <div style={S.header}>
-        <div style={S.breadcrumb}><span style={S.tag}>01</span> Update Database</div>
-        <h1 style={S.title}>Upload Excel</h1>
-        <p style={S.sub}>Upload your PM spreadsheet. New records are added by serial number — duplicates are skipped.</p>
-      </div>
+  const Header = () => (
+    <div style={{ marginBottom: 24 }}>
+      <span className="tag-mono badge-accent" style={{ marginBottom: 10, display: 'inline-block' }}>01 · Import</span>
+      <h1 className="page-title">Upload Excel</h1>
+      <p className="page-sub">Upload PM spreadsheet — new serial numbers added to Supabase, duplicates skipped.</p>
+    </div>
+  )
 
-      {/* Drop Zone */}
-      {!preview && (
-        <div
-          style={{ ...S.dropZone, ...(dragging ? S.dragging : {}) }}
-          onDragOver={e => { e.preventDefault(); setDragging(true) }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={handleDrop}
-          onClick={() => fileRef.current?.click()}
-        >
-          <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={e => processFile(e.target.files[0])} />
-          {loading
-            ? <div style={S.spinner} />
-            : <div style={{ fontSize: 36, marginBottom: 8 }}>📂</div>
-          }
-          <p style={{ color: 'var(--text2)', fontSize: 14 }}>Drop your Excel file here or <span style={{ color: 'var(--accent)', textDecoration: 'underline' }}>browse</span></p>
-          <p style={{ color: 'var(--text3)', fontSize: 12, fontFamily: 'var(--mono)' }}>.xlsx · .xls</p>
-        </div>
-      )}
+  const ErrorBar = () => error ? (
+    <div style={{ background: 'var(--red-dim)', border: '1px solid rgba(255,77,109,0.2)', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: 'var(--red)', marginBottom: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
+      <span style={{ flex: 1 }}>⚠ {error}</span>
+      <button onClick={() => setError('')} style={{ background: 'none', border: 'none', color: 'var(--red)', fontSize: 20, cursor: 'pointer', lineHeight: 1 }}>×</button>
+    </div>
+  ) : null
 
-      {error && (
-        <div style={S.errorBar}>⚠ {error}
-          <button onClick={() => setError('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--red)', fontSize: 16 }}>×</button>
-        </div>
-      )}
-
-      {/* Preview */}
+  // ── DESKTOP ──
+  const Desktop = () => (
+    <div className="desktop-only desktop-page" style={{ maxWidth: 900 }}>
+      <Header />
+      {!preview && !result && <><DropZone /><ErrorBar /></>}
       {preview && !result && (
         <>
-          <div style={S.metaRow}>
+          <div style={{ display: 'flex', gap: 12, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
             {[['Rows', preview.rows.length], ['Models', new Set(preview.rows.map(r=>r.model)).size], ['Provinces', new Set(preview.rows.map(r=>r.province)).size]].map(([l,v]) => (
-              <div key={l} style={S.metaCard}>
-                <span style={{ fontSize: 26, fontWeight: 600 }}>{v}</span>
-                <span style={{ fontSize: 11, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{l}</span>
+              <div key={l} className="card" style={{ padding: '10px 18px' }}>
+                <div style={{ fontSize: 24, fontWeight: 700 }}>{v}</div>
+                <div style={{ fontSize: 10, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{l}</div>
               </div>
             ))}
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button className="btn" onClick={() => setPreview(null)}>Change file</button>
-              <button className="btn btn-primary" onClick={buildDB}>Build Database →</button>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+              <button className="btn btn-sm" onClick={() => setPreview(null)}>Change file</button>
+              <button className="btn btn-primary btn-sm" onClick={buildDB} disabled={uploading}>
+                {uploading ? <><div style={{ width: 14, height: 14, border: '2px solid rgba(0,0,0,0.3)', borderTopColor: '#000', borderRadius: '50%' }} className="spin" /> Uploading…</> : 'Upload to Supabase →'}
+              </button>
             </div>
           </div>
-
-          <div style={S.tableWrap}>
-            <table style={S.table}>
-              <thead>
-                <tr>
-                  {['No.','CS-Code','Model','Serial Number','Service Type','Start','End','Clinic','Location','Province','PM Rounds'].map(h => (
-                    <th key={h} style={S.th}>{h}</th>
+          <ErrorBar />
+          <div className="card" style={{ overflow: 'hidden' }}>
+            <div className="tbl-wrap" style={{ maxHeight: '58vh' }}>
+              <table>
+                <thead><tr>{COLS.map(h => <th key={h}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {preview.rows.slice(0, 50).map((r, i) => (
+                    <tr key={i}>
+                      <td>{r.no}</td>
+                      <td><span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--accent)' }}>{r.cs_code}</span></td>
+                      <td>{r.model}</td>
+                      <td><span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{r.serial_number}</span></td>
+                      <td><span className="badge-green">{r.service_type}</span></td>
+                      <td style={{ fontSize: 11 }}>{r.start}</td>
+                      <td style={{ fontSize: 11 }}>{r.end}</td>
+                      <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.clinic}</td>
+                      <td>{r.province}</td>
+                    </tr>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {preview.rows.slice(0, 20).map((r, i) => (
-                  <tr key={i} style={i % 2 === 0 ? {} : { background: 'rgba(255,255,255,0.01)' }}>
-                    <td style={S.td}>{r.no}</td>
-                    <td style={S.td}><span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--accent)' }}>{r.cs_code}</span></td>
-                    <td style={S.td}>{r.model}</td>
-                    <td style={S.td}><span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{r.serial_number}</span></td>
-                    <td style={S.td}><span style={{ background: 'var(--green-dim)', color: 'var(--green)', padding: '1px 7px', borderRadius: 4, fontSize: 11 }}>{r.service_type}</span></td>
-                    <td style={S.td}>{r.start}</td>
-                    <td style={S.td}>{r.end}</td>
-                    <td style={{ ...S.td, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.clinic}</td>
-                    <td style={S.td}>{r.location}</td>
-                    <td style={S.td}>{r.province}</td>
-                    <td style={S.td}>
-                      <div style={{ display: 'flex', gap: 2 }}>
-                        {PM_ROUND_LABELS.map((lb, idx) => (
-                          <span key={idx} style={{ background: r.pm_dates[idx] ? 'var(--accent-dim)' : 'var(--bg3)', color: r.pm_dates[idx] ? 'var(--accent)' : 'var(--text3)', fontSize: 10, padding: '1px 5px', borderRadius: 3, fontFamily: 'var(--mono)' }}>{lb}</span>
-                        ))}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {preview.rows.length > 20 && <div style={{ textAlign: 'center', padding: 12, color: 'var(--text3)', fontSize: 12 }}>+ {preview.rows.length - 20} more rows</div>}
+                </tbody>
+              </table>
+            </div>
+            {preview.rows.length > 50 && <div style={{ textAlign: 'center', padding: 10, color: 'var(--text3)', fontSize: 12 }}>+{preview.rows.length - 50} more rows</div>}
           </div>
         </>
       )}
-
-      {/* Result */}
-      {result && (
-        <div style={{ ...S.card, padding: 32, textAlign: 'center' }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
-          <h2 style={{ fontSize: 20, marginBottom: 20 }}>Database Updated!</h2>
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginBottom: 28 }}>
-            <div style={S.metaCard}><span style={{ fontSize: 28, color: 'var(--green)' }}>{result.imported}</span><span style={{ fontSize: 11, color: 'var(--text2)' }}>IMPORTED</span></div>
-            <div style={S.metaCard}><span style={{ fontSize: 28, color: 'var(--yellow)' }}>{result.duplicates}</span><span style={{ fontSize: 11, color: 'var(--text2)' }}>SKIPPED</span></div>
-            <div style={S.metaCard}><span style={{ fontSize: 28 }}>{result.total}</span><span style={{ fontSize: 11, color: 'var(--text2)' }}>TOTAL IN DB</span></div>
-          </div>
-          <button className="btn btn-primary" onClick={() => { setPreview(null); setResult(null) }}>Upload Another File</button>
-        </div>
-      )}
+      {result && <ResultCards result={result} onReset={() => { setPreview(null); setResult(null) }} />}
     </div>
   )
-}
 
-const styles = {
-  page: { maxWidth: 1100, margin: '0 auto', padding: '32px 24px' },
-  header: { marginBottom: 28 },
-  breadcrumb: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, fontSize: 12, color: 'var(--text3)' },
-  tag: { background: 'var(--accent-dim)', color: 'var(--accent)', fontFamily: 'var(--mono)', fontSize: 10, padding: '2px 8px', borderRadius: 4 },
-  title: { fontSize: 28, fontWeight: 700, letterSpacing: '-0.02em', marginBottom: 6 },
-  sub: { fontSize: 13, color: 'var(--text2)' },
-  dropZone: {
-    border: '1px dashed var(--border2)', borderRadius: 16, padding: '60px 24px',
-    textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s',
-    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-    background: 'var(--bg1)', marginBottom: 20
-  },
-  dragging: { borderColor: 'var(--accent)', background: 'var(--accent-dim)' },
-  errorBar: { display: 'flex', alignItems: 'center', gap: 8, background: 'var(--red-dim)', border: '1px solid rgba(255,77,109,0.2)', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: 'var(--red)', marginBottom: 16 },
-  metaRow: { display: 'flex', gap: 12, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' },
-  metaCard: { background: 'var(--bg1)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 2, minWidth: 80 },
-  tableWrap: { background: 'var(--bg1)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'auto', maxHeight: '60vh' },
-  table: { width: '100%', borderCollapse: 'collapse', fontSize: 12 },
-  th: { padding: '10px 12px', textAlign: 'left', color: 'var(--text3)', fontWeight: 500, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', background: 'var(--bg2)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap', position: 'sticky', top: 0 },
-  td: { padding: '9px 12px', borderBottom: '1px solid var(--border)', color: 'var(--text2)', whiteSpace: 'nowrap' },
-  card: { background: 'var(--bg1)', border: '1px solid var(--border)', borderRadius: 16 },
-  spinner: { width: 32, height: 32, border: '2px solid var(--border2)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' },
+  // ── MOBILE ──
+  const Mobile = () => (
+    <div className="mobile-only mobile-page">
+      <Header />
+      {!preview && !result && <><DropZone /><div style={{ marginTop: 12 }}><ErrorBar /></div></>}
+      {preview && !result && (
+        <>
+          <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {[['Rows', preview.rows.length], ['Models', new Set(preview.rows.map(r=>r.model)).size]].map(([l,v]) => (
+                <div key={l} className="card" style={{ padding: '8px 14px' }}>
+                  <div style={{ fontSize: 20, fontWeight: 700 }}>{v}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text2)', textTransform: 'uppercase' }}>{l}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+              <button className="btn btn-sm" onClick={() => setPreview(null)}>Change</button>
+              <button className="btn btn-primary btn-sm" onClick={buildDB} disabled={uploading}>
+                {uploading ? '⏳ Uploading…' : 'Upload →'}
+              </button>
+            </div>
+          </div>
+          <ErrorBar />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {preview.rows.slice(0, 30).map((r, i) => (
+              <div key={i} className="card" style={{ padding: '12px 14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--accent)' }}>{r.cs_code}</span>
+                  <span className="badge-green" style={{ fontSize: 10 }}>{r.service_type}</span>
+                </div>
+                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 2 }}>{r.clinic}</div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text2)', marginBottom: 4 }}>{r.serial_number}</div>
+                <div style={{ fontSize: 11, color: 'var(--text3)' }}>{r.province} · {r.model} · {r.start}</div>
+              </div>
+            ))}
+            {preview.rows.length > 30 && <div style={{ textAlign: 'center', padding: 10, color: 'var(--text3)', fontSize: 12 }}>+{preview.rows.length - 30} more</div>}
+          </div>
+        </>
+      )}
+      {result && <ResultCards result={result} onReset={() => { setPreview(null); setResult(null) }} />}
+    </div>
+  )
+
+  return <><Desktop /><Mobile /></>
 }

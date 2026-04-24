@@ -1,36 +1,44 @@
-const KEY = 'pm_plan_db'
-const PM_KEY = 'pm_plan_pm_status'
+import { fetchDevices, fetchAllPMStatus, fetchPMStatus, completePMRemote } from './supabase.js'
 
-export function loadDB() {
-  try { return JSON.parse(localStorage.getItem(KEY) || '[]') } catch { return [] }
+// ── Local cache to avoid re-fetching on every render ──
+let _deviceCache = null
+let _pmCache = null
+
+export async function loadDB() {
+  if (_deviceCache) return _deviceCache
+  try {
+    const rows = await fetchDevices()
+    _deviceCache = rows.map(r => ({
+      ...r,
+      start: r.start_date,
+      end: r.end_date,
+      pm_dates: r.pm_dates || [],
+    }))
+    return _deviceCache
+  } catch { return [] }
 }
 
-export function saveDB(rows) {
-  localStorage.setItem(KEY, JSON.stringify(rows))
+export function clearDBCache() {
+  _deviceCache = null
+  _pmCache = null
 }
 
-export function loadPMStatus() {
-  try { return JSON.parse(localStorage.getItem(PM_KEY) || '{}') } catch { return {} }
+export async function loadAllPMStatus() {
+  if (_pmCache) return _pmCache
+  try {
+    _pmCache = await fetchAllPMStatus()
+    return _pmCache
+  } catch { return {} }
 }
 
-export function savePMStatus(status) {
-  localStorage.setItem(PM_KEY, JSON.stringify(status))
-}
-
-export function completePM(serialNumber, pmIndex, engineers = []) {
-  const status = loadPMStatus()
-  if (!status[serialNumber]) status[serialNumber] = {}
-  status[serialNumber][pmIndex] = {
-    completed: true,
-    completedAt: new Date().toISOString(),
-    engineers: engineers.map(e => ({ id: e.id, nickname: e.nickname, fullname: e.fullname }))
-  }
-  savePMStatus(status)
+export async function getPMStatusAsync(serialNumber) {
+  try { return await fetchPMStatus(serialNumber) }
+  catch { return {} }
 }
 
 export function getPMStatus(serialNumber) {
-  const status = loadPMStatus()
-  return status[serialNumber] || {}
+  if (!_pmCache) return {}
+  return _pmCache[serialNumber] || {}
 }
 
 export function countPMDone(serialNumber) {
@@ -44,4 +52,17 @@ export function getNextPMIndex(serialNumber) {
     if (!s[i] || !s[i].completed) return i
   }
   return -1
+}
+
+export async function completePM(serialNumber, pmIndex, engineers = []) {
+  const result = await completePMRemote(serialNumber, pmIndex, engineers)
+  // Update local cache
+  if (!_pmCache) _pmCache = {}
+  if (!_pmCache[serialNumber]) _pmCache[serialNumber] = {}
+  _pmCache[serialNumber][pmIndex] = {
+    completed: true,
+    completedAt: new Date().toISOString(),
+    engineers
+  }
+  return result
 }
