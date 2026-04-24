@@ -1,16 +1,47 @@
-# React + Vite
+# PM-Plan
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A project management web app built with React + Vite.
 
-Currently, two official plugins are available:
+## Parts
+- **Part 01** — Import Data: Read Excel from Google Drive or local upload → build database
+- **Part 02** — Dashboard *(coming soon)*
+- **Part 03** — Manage *(coming soon)*
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Getting Started
 
-## React Compiler
+### Prerequisites
+- Node.js 18+
+- npm or yarn
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Install & Run
 
-## Expanding the ESLint configuration
+```bash
+npm install
+npm run dev
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Open [http://localhost:5173](http://localhost:5173)
+
+### Build for Production
+
+```bash
+npm run build
+npm run preview
+```
+
+## Deploy to Vercel
+
+1. Push this repo to GitHub as `PM-Plan`
+2. Go to [vercel.com](https://vercel.com) → New Project
+3. Import your `PM-Plan` GitHub repo
+4. Framework: **Vite** (auto-detected)
+5. Click **Deploy**
+
+Your app will be live at `https://pm-plan-xxx.vercel.app`
+
+## Tech Stack
+- React 18
+- Vite 5
+- React Router v6
+- SheetJS (xlsx) — Excel/CSV parsing
+- Lucide React — icons
