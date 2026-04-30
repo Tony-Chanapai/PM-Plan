@@ -1,0 +1,280 @@
+================================================================
+WONTECH ASIA · PM PLAN & LOGISTIC
+SYSTEM CHANGELOG
+================================================================
+
+Two-app system for preventive maintenance tracking and device transport
+logging at Wontech Asia. Built in-house from scratch, deployed on the
+web, used daily by 9 engineers and admin.
+
+URLs:
+  PM Plan      pm-plan.netlify.app
+  Logistic     wontech-logistic.netlify.app
+
+Stack:
+  Frontend     React 18 + Vite
+  Backend      Supabase (PostgreSQL + REST + Storage)
+  Hosting      Netlify (with serverless function for Maps URL parsing)
+  AI           Anthropic Claude API (QC Report scan)
+
+
+================================================================
+v1.0  ·  INITIAL BUILD
+================================================================
+
+PM PLAN — preventive maintenance tracking
+  - Device database (serial number, model, clinic, region)
+  - Excel import for bulk device upload
+  - 8 PM rounds per device (3M, 6M, 9M, 12M, 15M, 18M, 21M, 24M)
+  - Engineer assignment per PM job (9 engineers)
+  - QR code scanner (live video via getUserMedia + jsQR)
+  - PM completion flow: scan → engineers → round → save
+  - Light & dark theme
+  - Admin user management
+  - Activity log with CSV export
+
+LOGISTIC — device transport tracking
+  - Device search (serial number or QR code)
+  - Transport logging with reason (Install / Demo / CS Service / Other)
+  - Auto-fill district & province from Google Maps URL
+  - Full transport history per device
+  - Date-range PDF + CSV reports
+  - Shared device pool with PM Plan (Install creates PM schedule)
+
+SHARED SUPABASE BACKEND
+  Tables: devices, pm_status, app_users, activity_logs, app_settings,
+          logistics_devices, logistics_logs, user_favorites
+  Storage: photos bucket (public)
+
+
+================================================================
+v1.1  ·  PM PLANNING + QC REPORT
+================================================================
+
+PM PLANNING (PM Plan task 02)
+  - Date range + region filter
+  - Day-by-day clinic visit planner
+  - Drag & drop to reorder visits
+  - PDF + CSV export of plan
+
+QC REPORT (PM Plan task 04)
+  - AI-powered scan of handwritten QC forms
+  - Anthropic Claude API integration
+  - Structured output → branded PDF generation
+  - Admin API key management in Settings
+
+
+================================================================
+v1.2  ·  DASHBOARDS
+================================================================
+
+PM PLAN DASHBOARD (admin only)
+  - Total devices, completion %, overdue count, due-this-week
+  - Devices by region (horizontal bar chart)
+  - Top engineers in selected period
+  - PMs Completed list with engineers & photo indicators
+  - Upcoming PM schedule sorted by urgency
+  - Favorites & Recently viewed devices
+  - CSV export of completed PMs
+
+LOGISTIC DASHBOARD (admin only)
+  - Today's trips, period total, unique devices
+  - Top destinations (provinces) bar chart
+  - Top engineers ranked by trip count
+  - Trip reasons breakdown
+  - Activity Log table with reason badges
+  - Favorites & Recents
+  - CSV export of activity
+
+DATE RANGE PICKER on both dashboards
+  - 7 days, 30 days, 90 days, YTD, All time, Custom
+  - Custom date range with date pickers
+  - All stats and tables filter to selected range
+
+ADMIN-ONLY GATING
+  - Dashboard task card hidden for non-admin users
+  - Dashboard menu item hidden in nav bar for non-admin
+  - "Admin access required" guard on direct navigation
+
+
+================================================================
+v1.3  ·  PHOTO PROOF + DETAIL MODALS
+================================================================
+
+PHOTO UPLOAD
+  - Optional photo attachment on PM completion (PM Plan)
+  - Optional photo attachment on transport log (Logistic)
+  - Multi-photo selection
+  - Client-side compression (1600px wide, 0.85 JPEG quality)
+  - Storage in Supabase 'photos' bucket
+  - Always normalized to JPEG output for cross-platform consistency
+  - Auto-fill white background for PNGs with transparency
+  - Sanitized filenames (Date + random) to handle Android edge cases
+
+CLICKABLE DASHBOARD ROWS
+  - PM Plan: click any row in 'PMs Completed' to view detail modal
+  - Logistic: click any row in 'Activity Log' to view detail modal
+  - Detail modal shows full record + photo gallery
+  - Click photo to open full-size in new tab
+  - 📷N indicator badge for rows with photos
+  - Click outside or ✕ Close to dismiss
+
+CLICKABLE PM HISTORY (PM Plan, Complete PM page)
+  - History tab rows are now clickable
+  - Same PMDetailModal as dashboard
+  - View full proof-of-work gallery from device history
+  - Shared component (src/components/PMDetailModal.jsx)
+
+
+================================================================
+v1.4  ·  ENHANCED QR SCANNER
+================================================================
+
+  - 1920×1080 video capture for better QR detection
+  - Continuous autofocus + auto-exposure + white balance
+  - Pinch-zoom slider when supported by device camera
+  - Torch / flashlight toggle button
+  - Tap-to-focus on the video preview
+  - Dual-inversion detection (catches inverted QR codes)
+  - 70% scan frame (was 65%) for easier targeting
+  - Helper hint text "Tap to refocus · Hold steady 6–10cm"
+  - Scan-line animation
+  - Photo-fallback if camera permission denied
+
+
+================================================================
+v1.5  ·  SEARCH AUTOCOMPLETE
+================================================================
+
+  - Autocomplete dropdown on all serial-number search boxes:
+    - PM Plan Complete PM page
+    - Logistic Query page
+    - Logistic Transport Log page
+  - Searches by SN, QR code, OR clinic name
+  - Top 8 matches with model + province preview
+  - Highlights matching text within suggestions
+  - Keyboard navigation: ↑ ↓ Enter Esc
+  - Click outside dismisses dropdown
+  - Floats above container (z-index + overflow:visible fix)
+
+
+================================================================
+v1.6  ·  TIMEZONE & DATE FIXES
+================================================================
+
+  - Dashboard rangeEnd now sets to end-of-day (23:59:59.999) local
+    time so logs created today are always included in 'today' filter
+  - Initial dashboard fetch extended to tomorrow's UTC end so logs
+    written near midnight (any timezone) don't get missed
+  - Custom date inputs use explicit local-time interpretation
+  - 'Refresh' button added to both dashboards for manual reload
+  - Fix: PM dashboard handled empty device list (was crashing on null
+    stats); now shows friendly "No devices yet" message
+
+
+================================================================
+v1.7  ·  ANDROID COMPATIBILITY
+================================================================
+
+PHOTO ATTACHMENT
+  - Replaced hidden-input + button + inputRef.click() pattern (which
+    fails on some Android browsers) with the standard <label>-wraps-
+    <input> pattern that natively triggers file picker on every
+    browser
+  - Used "visually-hidden" CSS technique (1×1 clipped) instead of
+    display:none — display:none breaks click handling on mobile Safari
+    and older Android Chrome
+
+GOOGLE MAPS URL PARSING (Netlify serverless function)
+  - Multi-User-Agent retry strategy: tries desktop → android → ios →
+    googlebot until one returns useful place info. Different UAs cause
+    Google to return different redirect paths from the same short URL.
+  - Smart place-name cleanup: handles Thai+English duplicated names
+    (e.g., "Clinic Name คลินิก Clinic Name 1919...") by splitting on
+    Thai chars and picking the cleanest English candidate
+  - Direct Thai address fallback: parses "...Lat Yao, Chatuchak,
+    Bangkok 10900" pattern when geocoding fails — extracts district
+    and province from comma-separated parts
+  - Place name extraction now searches: /place/Name/ URL path, ?q=
+    query param, <meta og:title>, and <title> tag
+  - Increased HTML body buffer 80KB → 200KB
+  - Postcode-based query as additional geocoding strategy
+
+
+================================================================
+v1.8  ·  RELIABILITY & DIAGNOSTICS
+================================================================
+
+  - ErrorBoundary added wrapping both apps' root — runtime errors now
+    show a friendly screen with stack trace instead of blank page
+  - Boot loader in index.html — visible spinner before React mounts;
+    inline error catcher displays JS errors directly on screen if
+    bundle fails to load (no more blank white screen mystery)
+  - 15-second failsafe in HTML — shows "App did not start" message
+    if React never mounts
+  - netlify.toml added for PM Plan with explicit build command
+    + SPA redirect rules
+  - Fixed CSS typo: borderRadius → border-radius (line 88, index.css)
+
+
+================================================================
+v1.9  ·  SELF-HOSTED PITCH + SYSTEM OVERVIEW DECKS
+================================================================
+
+  - 12-slide pitch deck for self-hosted server proposal
+    (NAS hardware comparison, 5-year cost analysis, rollout plan)
+  - 16-slide system overview presentation
+    (problem statement, architecture, workflows, cost savings, roadmap)
+
+
+================================================================
+TECHNICAL DECISIONS
+================================================================
+
+DATA & SYNC
+  - No device caching in db.js — always fetch fresh so Logistic
+    location updates show immediately in PM Plan
+  - Install on existing device PATCHES devices + DELETES pm_status
+    to reset all 8 rounds (yellow warning shown to user first)
+  - Install on new device INSERTS into both tables with start_date,
+    end_date (+24mo), pm_dates (8 × 3-month intervals)
+
+UI PATTERNS
+  - Form inputs as memo'd components OUTSIDE parent with refs (fixes
+    re-render typing lag)
+  - PDF generation uses Blob URL + <a> click (no auto-print)
+  - Light theme via [data-theme="light"] CSS vars + theme.js
+    localStorage
+  - Favorites in Supabase user_favorites table; Recents in
+    localStorage (max 10 items)
+  - Photo upload uses NO capture="environment" so user can pick
+    from camera OR photo library
+
+PERFORMANCE
+  - Photos compressed client-side (1600px, 0.85 JPEG) before upload
+  - PM status fetched in pages of 1000 rows (Supabase REST limit)
+  - Dashboard fetches once on mount, filters client-side in useMemo
+
+SECURITY
+  - Row-level security on Supabase tables
+  - Anon key safe to expose (public read for relevant tables only)
+  - Admin role enforced via app_users.role column
+
+
+================================================================
+WHAT'S NEXT
+================================================================
+
+  - Push notifications for overdue PM alerts
+  - Auto-generated KPI monthly PDF report
+  - Native PWA install (Add to Home Screen)
+  - QR sticker batch print for new device intake
+  - Calendar integration (Google Calendar / iCal export)
+  - Trend analytics (month-over-month completion rates)
+  - AI service prediction (failure date forecasting)
+  - Self-hosted infrastructure migration to office NAS server
+
+
+================================================================
+END OF CHANGELOG
+================================================================
